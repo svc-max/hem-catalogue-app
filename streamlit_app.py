@@ -1,18 +1,17 @@
-# --- FULL SCRIPT WITH WEASYPRINT ---
+# --- FINAL SCRIPT WITH PACKAGED WKHTMLTOPDF BINARY ---
 import streamlit as st
 import pandas as pd
-import weasyprint
+import pdfkit
 import base64
 from pathlib import Path
 from datetime import datetime
 import json
 import os
 
-# --- Password Protection ---
 def check_password():
     """Returns `True` if the user entered the correct password."""
     def password_entered():
-        if st.session_state["password"] == st.secrets["PASSWORD"]:
+        if st.session_state.get("password") and "PASSWORD" in st.secrets and st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -26,16 +25,26 @@ def check_password():
         st.error("😕 Password incorrect. Please try again.")
     return False
 
-# --- Main app logic starts if password is correct ---
 if check_password():
     st.set_page_config(page_title="Metrisum Catalogue Maker", page_icon="📄", layout="wide")
 
+    # --- CONFIGURATION FOR OUR PACKAGED PDF TOOL ---
+    # Construct the path to the binary within the app's directory
+    path_wkhtmltopdf = os.path.join(os.path.dirname(__file__), 'bin', 'wkhtmltopdf')
+    # Set permissions to make it executable when on a Linux server
+    try:
+        os.chmod(path_wkhtmltopdf, 0o755)
+    except OSError:
+        # This will fail on Windows, which is fine. We just need it for the Linux server.
+        pass
+    CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
+    
     SELECTIONS_DIR = Path("selections")
     SELECTIONS_DIR.mkdir(exist_ok=True)
 
     HTML_CSS = """
     <style>
-        /* All your existing CSS goes here - no changes */
+        /* All your existing CSS goes here */
         body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 11pt; color: #3d3d3d; }
         h1 { color: #222; text-align: center; margin: 30px 0; font-weight: 300; letter-spacing: 1px; }
         .header-table { width: 100%; border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; border-spacing: 0; }
@@ -69,10 +78,8 @@ if check_password():
         except Exception: return ""
 
     def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
-        if st.session_state[key_for_checkbox]:
-            st.session_state[key_for_multiselect] = options_list
-        else:
-            st.session_state[key_for_multiselect] = []
+        if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
+        else: st.session_state[key_for_multiselect] = []
 
     def generate_product_tables_html(filtered_df, packaging_df):
         html = ""
@@ -136,11 +143,9 @@ if check_password():
             st.sidebar.warning("Please enter a name for the selection.")
             return
         filepath = SELECTIONS_DIR / f"{selection_name}.json"
-        state_to_save = {
-            'customer': st.session_state.get('customer'), 'country': st.session_state.get('country'),
-            'categories': st.session_state.get('categories'), 'packaging': st.session_state.get('packaging'),
-            'brands': st.session_state.get('brands'), 'fragrances': st.session_state.get('fragrances')
-        }
+        state_to_save = { 'customer': st.session_state.get('customer'), 'country': st.session_state.get('country'),
+                          'categories': st.session_state.get('categories'), 'packaging': st.session_state.get('packaging'),
+                          'brands': st.session_state.get('brands'), 'fragrances': st.session_state.get('fragrances') }
         with open(filepath, 'w') as f: json.dump(state_to_save, f, indent=4)
         st.sidebar.success(f"Saved selection: {selection_name}")
         st.session_state["selection_name_input"] = ""
@@ -148,7 +153,6 @@ if check_password():
     st.title("Dynamic Product Catalogue Maker 🛍️")
     try:
         products_df, packaging_df, customers_df, countries_df, rules_df = load_data()
-        
         categories_list = sorted(products_df['Category'].dropna().unique())
         packaging_list = sorted(products_df['Packaging'].dropna().unique())
         brands_list = sorted(products_df['Brand'].dropna().unique())
@@ -217,11 +221,16 @@ if check_password():
             else:
                 with st.spinner('Building your definitive catalogue... Please wait.'):
                     current_date = datetime.now().strftime("%d-%b-%Y")
-                    logo_b64 = get_image_as_base64_str(Path('assets/logo.png'))
+                    logo_b64 = get_image_as_base64_str(Path('assets') / 'logo.png')
                     product_tables_html = generate_product_tables_html(filtered_df, packaging_df)
                     final_html_string = generate_full_pdf_html(product_tables_html, customer_name_input, logo_b64, current_date)
                     
-                    pdf_bytes = weasyprint.HTML(string=final_html_string).write_pdf()
+                    options = {
+                        'page-size': 'A4', 'margin-top': '0.75in', 'margin-right': '0.75in',
+                        'margin-bottom': '0.75in', 'margin-left': '0.75in', 'encoding': "UTF-8",
+                        'enable-forms': None
+                    }
+                    pdf_bytes = pdfkit.from_string(final_html_string, False, options=options, configuration=CONFIG)
 
                     file_name_customer = customer_name_input.replace(' ', '_') if customer_name_input else "General"
                     file_name = f"Order_Form_{file_name_customer}_{current_date}.pdf"
