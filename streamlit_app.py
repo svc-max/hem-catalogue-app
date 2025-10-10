@@ -1,4 +1,4 @@
-# --- FINAL SCRIPT WITH PACKAGED WKHTMLTOPDF BINARY ---
+# --- FINAL, COMPLETE SCRIPT ---
 import streamlit as st
 import pandas as pd
 import pdfkit
@@ -8,34 +8,38 @@ from datetime import datetime
 import json
 import os
 
+# --- Password Protection ---
 def check_password():
     """Returns `True` if the user entered the correct password."""
     def password_entered():
+        # Check if the password is correct against the secret
         if st.session_state.get("password") and "PASSWORD" in st.secrets and st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]
+            del st.session_state["password"]  # Don't keep password in state
         else:
             st.session_state["password_correct"] = False
 
     if st.session_state.get("password_correct", False):
         return True
 
+    # Show the password input if not authenticated.
     st.text_input("Enter Password to access the App", type="password", on_change=password_entered, key="password")
     if "password_correct" in st.session_state and not st.session_state["password_correct"]:
         st.error("😕 Password incorrect. Please try again.")
     return False
 
+# --- Main app logic starts only if password is correct ---
 if check_password():
     st.set_page_config(page_title="Metrisum Catalogue Maker", page_icon="📄", layout="wide")
 
-    # --- CONFIGURATION FOR OUR PACKAGED PDF TOOL ---
-    # Construct the path to the binary within the app's directory
+    # --- Configuration for our packaged wkhtmltopdf tool ---
+    # Construct the path to the binary within the app's directory on the server
     path_wkhtmltopdf = os.path.join(os.path.dirname(__file__), 'bin', 'wkhtmltopdf')
-    # Set permissions to make it executable when on a Linux server
+    # Set permissions to make it executable (crucial for Linux servers)
     try:
         os.chmod(path_wkhtmltopdf, 0o755)
-    except OSError:
-        # This will fail on Windows, which is fine. We just need it for the Linux server.
+    except (OSError, FileNotFoundError):
+        # This can fail on local Windows, which is fine. It's for the cloud deployment.
         pass
     CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
     
@@ -44,7 +48,6 @@ if check_password():
 
     HTML_CSS = """
     <style>
-        /* All your existing CSS goes here */
         body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 11pt; color: #3d3d3d; }
         h1 { color: #222; text-align: center; margin: 30px 0; font-weight: 300; letter-spacing: 1px; }
         .header-table { width: 100%; border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; border-spacing: 0; }
@@ -153,6 +156,7 @@ if check_password():
     st.title("Dynamic Product Catalogue Maker 🛍️")
     try:
         products_df, packaging_df, customers_df, countries_df, rules_df = load_data()
+        
         categories_list = sorted(products_df['Category'].dropna().unique())
         packaging_list = sorted(products_df['Packaging'].dropna().unique())
         brands_list = sorted(products_df['Brand'].dropna().unique())
@@ -204,51 +208,19 @@ if check_password():
         base_filtered_df = products_df[products_df['SKU Code'].isin(final_allowed_skus)]
         filtered_df = base_filtered_df[base_filtered_df['Category'].isin(st.session_state.categories) & base_filtered_df['Packaging'].isin(st.session_state.packaging) & base_filtered_df['Brand'].isin(st.session_state.brands) & base_filtered_df['Fragrance'].isin(st.session_state.fragrances)].copy()
 
-# --- Main Page Content (REVISED WITH SALESPERSON PREVIEW) ---
-    st.header("Salesperson Preview")
-    st.caption("A compact, searchable view of the selected products for verification.")
-
-    if filtered_df.empty:
-        st.warning("No products match the current filter selection.")
-    else:
-        # --- 1. Prepare a new DataFrame for the preview ---
-        # We start with a copy of the filtered data
-        preview_df = filtered_df.copy()
-
-        # --- 2. Create the 'Exclusivity' column ---
-        # We'll merge the rules data to find which products are exclusive.
-        # This is more efficient than looping through every product.
-        exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
-        exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
-        
-        preview_df = pd.merge(
-            preview_df,
-            exclusivity_info[['SKU Code', 'Exclusivity']],
-            on='SKU Code',
-            how='left'
-        )
-        # Fill in non-exclusive products with a clear label
-        preview_df['Exclusivity'].fillna('General', inplace=True)
-        
-        # --- 3. Combine product name and fragrance for a clean 'Product' column ---
-        preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
-        
-        # --- 4. Select and reorder the final columns for the display ---
-        final_columns = [
-            'Category',
-            'Packaging',
-            'Product',
-            'Exclusivity',
-            'SKU Code' # Good to keep for reference
-        ]
-        
-        # --- 5. Display the new salesperson-focused table ---
-        # st.dataframe is searchable and sortable by clicking the column headers.
-        st.dataframe(
-            preview_df[final_columns],
-            use_container_width=True,
-            hide_index=True
-        )
+        st.header("Salesperson Preview")
+        st.caption("A compact, searchable view of the selected products for verification.")
+        if filtered_df.empty:
+            st.warning("No products match the current filter selection.")
+        else:
+            preview_df = filtered_df.copy()
+            exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
+            exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
+            preview_df = pd.merge(preview_df, exclusivity_info[['SKU Code', 'Exclusivity']], on='SKU Code', how='left')
+            preview_df['Exclusivity'].fillna('General', inplace=True)
+            preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
+            final_columns = ['Category', 'Packaging', 'Product', 'Exclusivity', 'SKU Code']
+            st.dataframe(preview_df[final_columns], use_container_width=True, hide_index=True)
 
         st.header("Generate Your Catalogue")
         customer_name_input = st.text_input("Enter Customer Name for PDF", value=st.session_state.customer if st.session_state.customer != '-- General / No Customer --' else '')
@@ -263,11 +235,10 @@ if check_password():
                     product_tables_html = generate_product_tables_html(filtered_df, packaging_df)
                     final_html_string = generate_full_pdf_html(product_tables_html, customer_name_input, logo_b64, current_date)
                     
-                    options = {
-                        'page-size': 'A4', 'margin-top': '0.75in', 'margin-right': '0.75in',
-                        'margin-bottom': '0.75in', 'margin-left': '0.75in', 'encoding': "UTF-8",
-                        'enable-forms': None
-                    }
+                    options = { 'page-size': 'A4', 'margin-top': '0.75in', 'margin-right': '0.75in',
+                                'margin-bottom': '0.75in', 'margin-left': '0.75in', 'encoding': "UTF-8",
+                                'enable-forms': None }
+                    
                     pdf_bytes = pdfkit.from_string(final_html_string, False, options=options, configuration=CONFIG)
 
                     file_name_customer = customer_name_input.replace(' ', '_') if customer_name_input else "General"
