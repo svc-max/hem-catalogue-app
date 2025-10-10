@@ -1,1 +1,4 @@
-wkhtmltopdf
+pango
+gobject-introspection
+cairo
+gdk-pixbuf2
