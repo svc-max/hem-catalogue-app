@@ -204,13 +204,51 @@ if check_password():
         base_filtered_df = products_df[products_df['SKU Code'].isin(final_allowed_skus)]
         filtered_df = base_filtered_df[base_filtered_df['Category'].isin(st.session_state.categories) & base_filtered_df['Packaging'].isin(st.session_state.packaging) & base_filtered_df['Brand'].isin(st.session_state.brands) & base_filtered_df['Fragrance'].isin(st.session_state.fragrances)].copy()
 
-        st.header("Live Catalogue Preview")
-        st.caption("This is a quick preview of the catalogue layout...")
-        if filtered_df.empty:
-            st.warning("No products match the current filter selection.")
-        else:
-            preview_html_tables = generate_product_tables_html(filtered_df, packaging_df)
-            st.html(f"<div style='background-color: #ffffff; height: 500px; overflow-y: auto; border: 1px solid #e0e0e0; padding: 15px; border-radius: 5px;'>{HTML_CSS}{preview_html_tables}</div>")
+# --- Main Page Content (REVISED WITH SALESPERSON PREVIEW) ---
+    st.header("Salesperson Preview")
+    st.caption("A compact, searchable view of the selected products for verification.")
+
+    if filtered_df.empty:
+        st.warning("No products match the current filter selection.")
+    else:
+        # --- 1. Prepare a new DataFrame for the preview ---
+        # We start with a copy of the filtered data
+        preview_df = filtered_df.copy()
+
+        # --- 2. Create the 'Exclusivity' column ---
+        # We'll merge the rules data to find which products are exclusive.
+        # This is more efficient than looping through every product.
+        exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
+        exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
+        
+        preview_df = pd.merge(
+            preview_df,
+            exclusivity_info[['SKU Code', 'Exclusivity']],
+            on='SKU Code',
+            how='left'
+        )
+        # Fill in non-exclusive products with a clear label
+        preview_df['Exclusivity'].fillna('General', inplace=True)
+        
+        # --- 3. Combine product name and fragrance for a clean 'Product' column ---
+        preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
+        
+        # --- 4. Select and reorder the final columns for the display ---
+        final_columns = [
+            'Category',
+            'Packaging',
+            'Product',
+            'Exclusivity',
+            'SKU Code' # Good to keep for reference
+        ]
+        
+        # --- 5. Display the new salesperson-focused table ---
+        # st.dataframe is searchable and sortable by clicking the column headers.
+        st.dataframe(
+            preview_df[final_columns],
+            use_container_width=True,
+            hide_index=True
+        )
 
         st.header("Generate Your Catalogue")
         customer_name_input = st.text_input("Enter Customer Name for PDF", value=st.session_state.customer if st.session_state.customer != '-- General / No Customer --' else '')
