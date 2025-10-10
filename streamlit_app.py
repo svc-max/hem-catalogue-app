@@ -30,7 +30,7 @@ def check_password():
 
 # --- Main app logic starts only if password is correct ---
 if check_password():
-    st.set_page_config(page_title="Metrisum Catalogue Maker", page_icon="📄", layout="wide")
+    st.set_page_config(page_title="Hem Exports Catalogue Maker", page_icon="📄", layout="wide")
 
     # --- Configuration for our packaged wkhtmltopdf tool ---
     # Construct the path to the binary within the app's directory on the server
