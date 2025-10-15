@@ -49,6 +49,7 @@ def load_data():
     countries_df = pd.read_excel('countries_master.xlsx')
     rules_df = pd.read_excel('exclusivity_rules.xlsx', dtype={'SKU Code': str})
     products_df['ImagePath'] = products_df['ImageFileName'].apply(lambda x: Path('images') / str(x) if pd.notna(x) else None)
+    products_df['ImageB64'] = products_df['ImagePath'].apply(get_image_as_base64_str)
     return products_df, packaging_df, customers_df, countries_df, rules_df
 
 def get_selections():
@@ -115,25 +116,6 @@ def render_salesperson_view():
     with st.sidebar.expander("Filter by Specifics"):
         st.multiselect('Filter by Brand', options=brands_list, key='brands')
         st.multiselect('Filter by Fragrance', options=fragrances_list, key='fragrances')
-
-    st.sidebar.divider()
-    st.sidebar.header("Share with Customer")
-    if st.sidebar.button("Generate Customer Order Link", type="primary"):
-        params = {
-            "customer": st.session_state.customer if st.session_state.customer != "-- General / No Customer --" else "",
-            "country": st.session_state.country if st.session_state.country != "-- General / No Country --" else "",
-            "categories": st.session_state.categories, "packaging": st.session_state.packaging,
-            "brands": st.session_state.brands, "fragrances": st.session_state.fragrances
-        }
-        
-        # IMPORTANT: Replace with your actual Streamlit app URL for this new branch
-        base_url = "https://hem-order.streamlit.app/" 
-        query_string = urllib.parse.urlencode(params, doseq=True)
-        final_url = base_url + "?" + query_string
-        
-        st.sidebar.success("Link Generated!")
-        st.sidebar.markdown("Copy the link below and send it to your customer:")
-        st.sidebar.code(final_url)
     
     with st.sidebar.expander("Save Current Selection"):
         st.text_input("Enter selection name", key="selection_name_input")
@@ -142,6 +124,27 @@ def render_salesperson_view():
     st.title("Dynamic Customer Link Generator 🔗")
     st.caption("Use the filters on the left to create a product selection, then generate a unique order link for your customer.")
     
+    # --- UI CHANGE: Moved Link Generator to Main Page ---
+    with st.container(border=True):
+        if st.button("Generate Customer Order Link", type="primary"):
+            params = {
+                "customer": st.session_state.customer if st.session_state.customer != "-- General / No Customer --" else "",
+                "country": st.session_state.country if st.session_state.country != "-- General / No Country --" else "",
+                "categories": st.session_state.categories, "packaging": st.session_state.packaging,
+                "brands": st.session_state.brands, "fragrances": st.session_state.fragrances
+            }
+            
+            # IMPORTANT: Replace with your actual Streamlit app URL for this new branch
+            base_url = "https://hem-order.streamlit.app/" 
+            query_string = urllib.parse.urlencode(params, doseq=True)
+            final_url = base_url + "?" + query_string
+            
+            st.success("Link Generated!")
+            st.markdown("Copy the link below and send it to your customer:")
+            st.code(final_url)
+
+    st.markdown("---") # Visual separator
+
     try:
         skus_with_rules = rules_df['SKU Code'].unique()
         general_skus = products_df[~products_df['SKU Code'].isin(skus_with_rules)]['SKU Code']
@@ -180,8 +183,13 @@ def render_customer_view(params):
     
     products_df, packaging_df, _, _, rules_df = load_data()
     
-    customer = params.get("customer", [None])[0]
-    country = params.get("country", [None])[0]
+    # --- FIX: Use get_all to ensure parameters are lists ---
+    customer_list = params.get("customer", [])
+    customer = customer_list[0] if customer_list else None
+    
+    country_list = params.get("country", [])
+    country = country_list[0] if country_list else None
+    
     selected_categories = params.get("categories", [])
     selected_packaging = params.get("packaging", [])
     selected_brands = params.get("brands", [])
@@ -213,8 +221,7 @@ def render_customer_view(params):
         st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging', 'ImageFileName']], hide_index=True)
         
 # --- MAIN LOGIC: The "Router" ---
-params = st.query_params.to_dict()
-
+params = st.query_params
 if params:
     render_customer_view(params)
 else:
