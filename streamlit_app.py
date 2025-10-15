@@ -1,4 +1,4 @@
-# --- SCRIPT DEDICATED TO CUSTOMER PORTAL WORKFLOW ---
+# --- FINAL, CORRECTED SCRIPT FOR CUSTOMER PORTAL ---
 import streamlit as st
 import pandas as pd
 import base64
@@ -49,7 +49,6 @@ def load_data():
     countries_df = pd.read_excel('countries_master.xlsx')
     rules_df = pd.read_excel('exclusivity_rules.xlsx', dtype={'SKU Code': str})
     products_df['ImagePath'] = products_df['ImageFileName'].apply(lambda x: Path('images') / str(x) if pd.notna(x) else None)
-    products_df['ImageB64'] = products_df['ImagePath'].apply(get_image_as_base64_str)
     return products_df, packaging_df, customers_df, countries_df, rules_df
 
 def get_selections():
@@ -78,7 +77,7 @@ def save_selection():
 
 # --- VIEW: Salesperson Tool ---
 def render_salesperson_view():
-    st.set_page_config(page_title="Hem Catalogue Maker", page_icon="🛍️", layout="wide")
+    st.set_page_config(page_title="Hem Catalogue Link Generator", page_icon="🔗", layout="wide")
     
     products_df, _, customers_df, countries_df, rules_df = load_data()
     
@@ -140,7 +139,9 @@ def render_salesperson_view():
         st.text_input("Enter selection name", key="selection_name_input")
         st.button("Save Filters", on_click=save_selection)
 
-    st.title("Dynamic Product Catalogue Maker 🛍️")
+    st.title("Dynamic Customer Link Generator 🔗")
+    st.caption("Use the filters on the left to create a product selection, then generate a unique order link for your customer.")
+    
     try:
         skus_with_rules = rules_df['SKU Code'].unique()
         general_skus = products_df[~products_df['SKU Code'].isin(skus_with_rules)]['SKU Code']
@@ -177,7 +178,7 @@ def render_salesperson_view():
 def render_customer_view(params):
     st.set_page_config(page_title="Hem Order Portal", page_icon="📝", layout="wide")
     
-    products_df, _, _, _, rules_df = load_data()
+    products_df, packaging_df, _, _, rules_df = load_data()
     
     customer = params.get("customer", [None])[0]
     country = params.get("country", [None])[0]
@@ -207,9 +208,9 @@ def render_customer_view(params):
     if filtered_df.empty:
         st.warning("No products match the specified selection.")
     else:
-        # For now, just display the products as a simple table.
-        # We will build the interactive order form here in Phase 2.
-        st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging']])
+        st.header("Product List")
+        # For Phase 1, we just show a simple table to confirm filtering works.
+        st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging', 'ImageFileName']], hide_index=True)
         
 # --- MAIN LOGIC: The "Router" ---
 params = st.query_params.to_dict()
