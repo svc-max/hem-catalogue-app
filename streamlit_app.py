@@ -169,7 +169,7 @@ def render_salesperson_view():
 def render_customer_view():
     st.set_page_config(page_title="Hem Order Portal", page_icon="📝", layout="wide")
     
-    products_df, packaging_df, _, _, rules_df = load_data()
+    products_df, _, _, _, rules_df = load_data()
     
     # --- CORRECTED & ROBUST PARAMETER HANDLING ---
     params = st.query_params
