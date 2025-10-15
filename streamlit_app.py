@@ -1,4 +1,4 @@
-# --- SCRIPT FOR CUSTOMER PORTAL - PHASE 2 ---
+# --- SCRIPT FOR CUSTOMER PORTAL - CORRECTED IMAGE HANDLING ---
 import streamlit as st
 import pandas as pd
 import base64
@@ -31,6 +31,17 @@ def check_password():
     return False
 
 @st.cache_data
+def get_image_as_base64_str(path):
+    if path is None or not Path(path).exists(): return None
+    try:
+        with open(path, "rb") as image_file: return base64.b64encode(image_file.read()).decode()
+    except Exception: return None
+
+def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
+    if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
+    else: st.session_state[key_for_multiselect] = []
+
+@st.cache_data
 def load_data():
     products_df = pd.read_excel('products_master.xlsx', dtype={'SKU Code': str})
     packaging_df = pd.read_excel('packaging_master.xlsx')
@@ -38,6 +49,10 @@ def load_data():
     countries_df = pd.read_excel('countries_master.xlsx')
     rules_df = pd.read_excel('exclusivity_rules.xlsx', dtype={'SKU Code': str})
     products_df['ImagePath'] = products_df['ImageFileName'].apply(lambda x: Path('images') / str(x) if pd.notna(x) else None)
+    
+    # --- CHANGE 1: Pre-process images into Base64 when data is loaded ---
+    products_df['ImageB64'] = products_df['ImagePath'].apply(get_image_as_base64_str)
+    
     return products_df, packaging_df, customers_df, countries_df, rules_df
 
 def get_selections():
@@ -63,10 +78,6 @@ def save_selection():
     with open(filepath, 'w') as f: json.dump(state_to_save, f, indent=4)
     st.sidebar.success(f"Saved selection: {selection_name}")
     st.session_state["selection_name_input"] = ""
-
-def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
-    if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
-    else: st.session_state[key_for_multiselect] = []
 
 # --- VIEW: Salesperson Tool ---
 def render_salesperson_view():
@@ -124,7 +135,6 @@ def render_salesperson_view():
                 "categories": st.session_state.categories, "packaging": st.session_state.packaging,
                 "brands": st.session_state.brands, "fragrances": st.session_state.fragrances
             }
-            # IMPORTANT: Replace with your actual Streamlit app URL for this new branch
             base_url = "https://hem-order.streamlit.app/" 
             query_string = urllib.parse.urlencode(params, doseq=True)
             final_url = base_url + "?" + query_string
@@ -166,7 +176,7 @@ def render_salesperson_view():
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
 
-# --- VIEW: Customer Order Portal (Phase 2 - Interactive) ---
+# --- VIEW: Customer Order Portal (Phase 2 - Interactive with Images) ---
 def render_customer_view():
     st.set_page_config(page_title="Hem Order Portal", page_icon="📝", layout="wide")
     
@@ -204,7 +214,8 @@ def render_customer_view():
     if filtered_df.empty:
         st.warning("No products match the specified selection.")
     else:
-        filtered_df['Image'] = filtered_df['ImageFileName'].apply(lambda x: f'images/{x}' if pd.notna(x) else None)
+        # --- CHANGE 2: Use the pre-processed 'ImageB64' column ---
+        filtered_df['Image'] = filtered_df['ImageB64']
         filtered_df['Quantity'] = 0
         
         st.info("You can sort the table by clicking on the column headers.")
@@ -247,7 +258,6 @@ def render_customer_view():
                 st.warning("Please fill in your Name, Company, and Email before submitting.")
             else:
                 with st.spinner("Submitting your order..."):
-                    # Phase 3: Email logic will go here.
                     st.success(f"Thank you, {contact_name}! Your order has been submitted.")
                     st.balloons()
                     st.markdown("### Order Summary:")
