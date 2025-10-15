@@ -1,4 +1,4 @@
-# --- CORRECTED SCRIPT FOR CUSTOMER PORTAL (v. Oct 15) ---
+# --- SCRIPT FOR CUSTOMER PORTAL - PHASE 2 ---
 import streamlit as st
 import pandas as pd
 import base64
@@ -124,6 +124,7 @@ def render_salesperson_view():
                 "categories": st.session_state.categories, "packaging": st.session_state.packaging,
                 "brands": st.session_state.brands, "fragrances": st.session_state.fragrances
             }
+            # IMPORTANT: Replace with your actual Streamlit app URL for this new branch
             base_url = "https://hem-order.streamlit.app/" 
             query_string = urllib.parse.urlencode(params, doseq=True)
             final_url = base_url + "?" + query_string
@@ -165,27 +166,24 @@ def render_salesperson_view():
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
 
-# --- VIEW: Customer Order Portal ---
+# --- VIEW: Customer Order Portal (Phase 2 - Interactive) ---
 def render_customer_view():
     st.set_page_config(page_title="Hem Order Portal", page_icon="📝", layout="wide")
     
     products_df, _, _, _, rules_df = load_data()
     
-    # --- CORRECTED & ROBUST PARAMETER HANDLING ---
     params = st.query_params
-    
     customer_list = params.get_all("customer")
     customer = customer_list[0] if customer_list and customer_list[0] else None
-    
     country_list = params.get_all("country")
     country = country_list[0] if country_list and country_list[0] else None
-    
     selected_categories = params.get_all("categories")
     selected_packaging = params.get_all("packaging")
     selected_brands = params.get_all("brands")
     selected_fragrances = params.get_all("fragrances")
 
     st.title(f"Product Catalogue for {customer}" if customer else "Product Catalogue")
+    st.markdown("Please enter the quantity in master cartons for each product you wish to order.")
     st.markdown("---")
     
     skus_with_rules = rules_df['SKU Code'].unique()
@@ -206,9 +204,55 @@ def render_customer_view():
     if filtered_df.empty:
         st.warning("No products match the specified selection.")
     else:
-        st.header("Product List")
-        st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging', 'ImageFileName']], hide_index=True)
+        filtered_df['Image'] = filtered_df['ImageFileName'].apply(lambda x: f'images/{x}' if pd.notna(x) and os.path.exists(f'images/{x}') else None)
+        filtered_df['Quantity'] = 0
         
+        st.info("You can sort the table by clicking on the column headers.")
+        
+        edited_df = st.data_editor(
+            filtered_df,
+            column_config={
+                "Image": st.column_config.ImageColumn("Image", width="small"),
+                "SKU Code": st.column_config.TextColumn("SKU", width="medium"),
+                "ItemName": st.column_config.TextColumn("Product Name", width="large"),
+                "Fragrance": st.column_config.TextColumn("Fragrance", width="medium"),
+                "Quantity": st.column_config.NumberColumn("Order Quantity (Cartons)", min_value=0, step=1)
+            },
+            column_order=["Image", "ItemName", "Fragrance", "SKU Code", "Quantity"],
+            disabled=["Image", "ItemName", "Fragrance", "SKU Code"],
+            hide_index=True,
+            use_container_width=True,
+            key="order_editor"
+        )
+
+        st.markdown("---")
+        
+        with st.form(key='submission_form'):
+            st.header("Submit Your Order")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                contact_name = st.text_input("Your Name*", placeholder="John Doe")
+            with col2:
+                company_name = st.text_input("Company Name*", placeholder="ABC Corporation")
+            with col3:
+                contact_email = st.text_input("Your Email*", placeholder="john.doe@example.com")
+            
+            submitted = st.form_submit_button("Submit Order", type="primary")
+
+        if submitted:
+            order_items = edited_df[edited_df['Quantity'] > 0]
+            if order_items.empty:
+                st.warning("Please enter a quantity for at least one product.")
+            elif not contact_name or not company_name or not contact_email:
+                st.warning("Please fill in your Name, Company, and Email before submitting.")
+            else:
+                with st.spinner("Submitting your order..."):
+                    # Phase 3: Email logic will go here.
+                    st.success(f"Thank you, {contact_name}! Your order has been submitted.")
+                    st.balloons()
+                    st.markdown("### Order Summary:")
+                    st.dataframe(order_items[['SKU Code', 'ItemName', "Fragrance", 'Quantity']], hide_index=True)
+
 # --- MAIN LOGIC: The "Router" ---
 if st.query_params:
     render_customer_view()
