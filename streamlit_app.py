@@ -1,4 +1,4 @@
-# --- FINAL, CORRECTED SCRIPT FOR CUSTOMER PORTAL ---
+# --- CORRECTED SCRIPT FOR CUSTOMER PORTAL (v. Oct 15) ---
 import streamlit as st
 import pandas as pd
 import base64
@@ -157,12 +157,10 @@ def render_salesperson_view():
             exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
             exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
             preview_df = pd.merge(preview_df, exclusivity_info[['SKU Code', 'Exclusivity']], on='SKU Code', how='left')
-            # FIX for FutureWarning:
             preview_df['Exclusivity'] = preview_df['Exclusivity'].fillna('General')
             preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
             final_columns = ['Category', 'Packaging', 'Product', 'Exclusivity', 'SKU Code']
-            # FIX for FutureWarning:
-            st.dataframe(preview_df[final_columns], width='stretch', hide_index=True)
+            st.dataframe(preview_df[final_columns], use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
@@ -173,8 +171,9 @@ def render_customer_view():
     
     products_df, packaging_df, _, _, rules_df = load_data()
     
-    # --- FIX: Use get_all to safely handle URL parameters and prevent errors ---
+    # --- CORRECTED & ROBUST PARAMETER HANDLING ---
     params = st.query_params
+    
     customer_list = params.get_all("customer")
     customer = customer_list[0] if customer_list and customer_list[0] else None
     
@@ -208,7 +207,6 @@ def render_customer_view():
         st.warning("No products match the specified selection.")
     else:
         st.header("Product List")
-        # For Phase 1, we just show a simple table to confirm filtering works.
         st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging', 'ImageFileName']], hide_index=True)
         
 # --- MAIN LOGIC: The "Router" ---
