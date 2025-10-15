@@ -31,17 +31,6 @@ def check_password():
     return False
 
 @st.cache_data
-def get_image_as_base64_str(path):
-    if path is None or not Path(path).exists(): return ""
-    try:
-        with open(path, "rb") as image_file: return base64.b64encode(image_file.read()).decode()
-    except Exception: return ""
-
-def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
-    if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
-    else: st.session_state[key_for_multiselect] = []
-
-@st.cache_data
 def load_data():
     products_df = pd.read_excel('products_master.xlsx', dtype={'SKU Code': str})
     packaging_df = pd.read_excel('packaging_master.xlsx')
@@ -49,7 +38,6 @@ def load_data():
     countries_df = pd.read_excel('countries_master.xlsx')
     rules_df = pd.read_excel('exclusivity_rules.xlsx', dtype={'SKU Code': str})
     products_df['ImagePath'] = products_df['ImageFileName'].apply(lambda x: Path('images') / str(x) if pd.notna(x) else None)
-    products_df['ImageB64'] = products_df['ImagePath'].apply(get_image_as_base64_str)
     return products_df, packaging_df, customers_df, countries_df, rules_df
 
 def get_selections():
@@ -75,6 +63,10 @@ def save_selection():
     with open(filepath, 'w') as f: json.dump(state_to_save, f, indent=4)
     st.sidebar.success(f"Saved selection: {selection_name}")
     st.session_state["selection_name_input"] = ""
+
+def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
+    if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
+    else: st.session_state[key_for_multiselect] = []
 
 # --- VIEW: Salesperson Tool ---
 def render_salesperson_view():
@@ -124,7 +116,6 @@ def render_salesperson_view():
     st.title("Dynamic Customer Link Generator 🔗")
     st.caption("Use the filters on the left to create a product selection, then generate a unique order link for your customer.")
     
-    # --- UI CHANGE: Moved Link Generator to Main Page ---
     with st.container(border=True):
         if st.button("Generate Customer Order Link", type="primary"):
             params = {
@@ -133,17 +124,14 @@ def render_salesperson_view():
                 "categories": st.session_state.categories, "packaging": st.session_state.packaging,
                 "brands": st.session_state.brands, "fragrances": st.session_state.fragrances
             }
-            
-            # IMPORTANT: Replace with your actual Streamlit app URL for this new branch
             base_url = "https://hem-order.streamlit.app/" 
             query_string = urllib.parse.urlencode(params, doseq=True)
             final_url = base_url + "?" + query_string
-            
             st.success("Link Generated!")
             st.markdown("Copy the link below and send it to your customer:")
             st.code(final_url)
 
-    st.markdown("---") # Visual separator
+    st.markdown("---")
 
     try:
         skus_with_rules = rules_df['SKU Code'].unique()
@@ -169,31 +157,34 @@ def render_salesperson_view():
             exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
             exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
             preview_df = pd.merge(preview_df, exclusivity_info[['SKU Code', 'Exclusivity']], on='SKU Code', how='left')
-            preview_df['Exclusivity'].fillna('General', inplace=True)
+            # FIX for FutureWarning:
+            preview_df['Exclusivity'] = preview_df['Exclusivity'].fillna('General')
             preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
             final_columns = ['Category', 'Packaging', 'Product', 'Exclusivity', 'SKU Code']
-            st.dataframe(preview_df[final_columns], use_container_width=True, hide_index=True)
+            # FIX for FutureWarning:
+            st.dataframe(preview_df[final_columns], width='stretch', hide_index=True)
 
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
 
 # --- VIEW: Customer Order Portal ---
-def render_customer_view(params):
+def render_customer_view():
     st.set_page_config(page_title="Hem Order Portal", page_icon="📝", layout="wide")
     
     products_df, packaging_df, _, _, rules_df = load_data()
     
-    # --- FIX: Use get_all to ensure parameters are lists ---
-    customer_list = params.get("customer", [])
-    customer = customer_list[0] if customer_list else None
+    # --- FIX: Use get_all to safely handle URL parameters and prevent errors ---
+    params = st.query_params
+    customer_list = params.get_all("customer")
+    customer = customer_list[0] if customer_list and customer_list[0] else None
     
-    country_list = params.get("country", [])
-    country = country_list[0] if country_list else None
+    country_list = params.get_all("country")
+    country = country_list[0] if country_list and country_list[0] else None
     
-    selected_categories = params.get("categories", [])
-    selected_packaging = params.get("packaging", [])
-    selected_brands = params.get("brands", [])
-    selected_fragrances = params.get("fragrances", [])
+    selected_categories = params.get_all("categories")
+    selected_packaging = params.get_all("packaging")
+    selected_brands = params.get_all("brands")
+    selected_fragrances = params.get_all("fragrances")
 
     st.title(f"Product Catalogue for {customer}" if customer else "Product Catalogue")
     st.markdown("---")
@@ -221,9 +212,8 @@ def render_customer_view(params):
         st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging', 'ImageFileName']], hide_index=True)
         
 # --- MAIN LOGIC: The "Router" ---
-params = st.query_params
-if params:
-    render_customer_view(params)
+if st.query_params:
+    render_customer_view()
 else:
     if check_password():
         render_salesperson_view()
