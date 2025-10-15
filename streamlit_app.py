@@ -204,7 +204,7 @@ def render_customer_view():
     if filtered_df.empty:
         st.warning("No products match the specified selection.")
     else:
-        filtered_df['Image'] = filtered_df['ImageFileName'].apply(lambda x: f'images/{x}' if pd.notna(x) and os.path.exists(f'images/{x}') else None)
+        filtered_df['Image'] = filtered_df['ImageFileName'].apply(lambda x: f'images/{x}' if pd.notna(x) else None)
         filtered_df['Quantity'] = 0
         
         st.info("You can sort the table by clicking on the column headers.")
