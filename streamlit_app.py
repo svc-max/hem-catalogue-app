@@ -1,32 +1,21 @@
-# --- SCRIPT RESTRUCTURED FOR CUSTOMER PORTAL ---
+# --- SCRIPT DEDICATED TO CUSTOMER PORTAL WORKFLOW ---
 import streamlit as st
 import pandas as pd
-import pdfkit
 import base64
 from pathlib import Path
 from datetime import datetime
 import json
 import os
-import urllib.parse # NEW: Library to help build URLs safely
+import urllib.parse
 
 # --- GLOBAL CONFIGURATION & SETUP ---
 SELECTIONS_DIR = Path("selections")
 SELECTIONS_DIR.mkdir(exist_ok=True)
 
-HTML_CSS = """
-<style>
-    /* Your existing CSS is unchanged */
-    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 11pt; color: #3d3d3d; }
-    h1 { color: #222; text-align: center; margin: 30px 0; font-weight: 300; letter-spacing: 1px; }
-    /* ... (rest of your CSS) ... */
-    .input-cell input { width: 80px; text-align: center; border: 1px solid #000000; border-radius: 4px; padding: 8px; font-size: 11pt; background-color: #ffffff; color: #000000; margin-top: 5px; }
-</style>
-"""
-
 # --- HELPER FUNCTIONS ---
 
 def check_password():
-    # This function is unchanged
+    """Returns `True` if the user entered the correct password."""
     def password_entered():
         if st.session_state.get("password") and "PASSWORD" in st.secrets and st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
@@ -42,70 +31,154 @@ def check_password():
     return False
 
 @st.cache_data
+def get_image_as_base64_str(path):
+    if path is None or not Path(path).exists(): return ""
+    try:
+        with open(path, "rb") as image_file: return base64.b64encode(image_file.read()).decode()
+    except Exception: return ""
+
+def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
+    if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
+    else: st.session_state[key_for_multiselect] = []
+
+@st.cache_data
 def load_data():
-    # This function is unchanged
     products_df = pd.read_excel('products_master.xlsx', dtype={'SKU Code': str})
     packaging_df = pd.read_excel('packaging_master.xlsx')
     customers_df = pd.read_excel('customers_master.xlsx')
     countries_df = pd.read_excel('countries_master.xlsx')
     rules_df = pd.read_excel('exclusivity_rules.xlsx', dtype={'SKU Code': str})
     products_df['ImagePath'] = products_df['ImageFileName'].apply(lambda x: Path('images') / str(x) if pd.notna(x) else None)
-    # We no longer need to pre-load images for the web view, but we'll keep it for the PDF generator
     products_df['ImageB64'] = products_df['ImagePath'].apply(get_image_as_base64_str)
     return products_df, packaging_df, customers_df, countries_df, rules_df
 
-# --- All other helper functions (get_image_as_base64, toggle_all_items, etc.) are also unchanged ---
+def get_selections():
+    return ["---"] + [f.stem for f in SELECTIONS_DIR.glob("*.json")]
+
+def load_selection():
+    selection_name = st.session_state.selected_preset
+    if selection_name and selection_name != "---":
+        filepath = SELECTIONS_DIR / f"{selection_name}.json"
+        with open(filepath, 'r') as f: data = json.load(f)
+        for key, value in data.items(): st.session_state[key] = value
+        st.toast(f"Loaded selection: {selection_name}", icon="✅")
+
+def save_selection():
+    selection_name = st.session_state.get("selection_name_input", "").strip()
+    if not selection_name:
+        st.sidebar.warning("Please enter a name for the selection.")
+        return
+    filepath = SELECTIONS_DIR / f"{selection_name}.json"
+    state_to_save = { 'customer': st.session_state.get('customer'), 'country': st.session_state.get('country'),
+                      'categories': st.session_state.get('categories'), 'packaging': st.session_state.get('packaging'),
+                      'brands': st.session_state.get('brands'), 'fragrances': st.session_state.get('fragrances') }
+    with open(filepath, 'w') as f: json.dump(state_to_save, f, indent=4)
+    st.sidebar.success(f"Saved selection: {selection_name}")
+    st.session_state["selection_name_input"] = ""
 
 # --- VIEW: Salesperson Tool ---
 def render_salesperson_view():
     st.set_page_config(page_title="Hem Catalogue Maker", page_icon="🛍️", layout="wide")
     
-    # MOVED: PDF config is only needed in this view now
-    path_wkhtmltopdf = os.path.join(os.path.dirname(__file__), 'bin', 'wkhtmltopdf')
-    try: os.chmod(path_wkhtmltopdf, 0o755)
-    except (OSError, FileNotFoundError): pass
-    CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
+    products_df, _, customers_df, countries_df, rules_df = load_data()
     
-    products_df, packaging_df, customers_df, countries_df, rules_df = load_data()
-    
-    # Sidebar and filtering logic is unchanged...
-    # ... (all the sidebar code, filters, load/save selection)
-    
-    # --- NEW: Generate Customer Order Link ---
+    categories_list = sorted(products_df['Category'].dropna().unique())
+    packaging_list = sorted(products_df['Packaging'].dropna().unique())
+    brands_list = sorted(products_df['Brand'].dropna().unique())
+    fragrances_list = sorted(products_df['Fragrance'].dropna().unique())
+    customer_list = ["-- General / No Customer --"] + sorted(customers_df['CustomerName'].dropna().unique())
+    country_list = ["-- General / No Country --"] + sorted(countries_df['CountryName'].dropna().unique())
+
+    if 'filters_initialized' not in st.session_state:
+        st.session_state.customer = customer_list[0]
+        st.session_state.country = country_list[0]
+        st.session_state.categories = categories_list
+        st.session_state.packaging = packaging_list
+        st.session_state.brands = brands_list
+        st.session_state.fragrances = fragrances_list
+        st.session_state.filters_initialized = True
+
+    st.sidebar.title("Configuration")
+    st.sidebar.header("Load Selection")
+    saved_selections = get_selections()
+    st.selectbox("Choose a saved filter set", options=saved_selections, key="selected_preset", on_change=load_selection)
+    st.sidebar.divider()
+    st.sidebar.header("Catalogue Selection")
+    st.sidebar.selectbox("1. Select Customer", customer_list, key='customer')
+    st.sidebar.selectbox("2. Select Country", country_list, key='country')
+    st.sidebar.header("Product Filters")
+    with st.sidebar.expander("Filter by Product Type", expanded=True):
+        st.checkbox("Select All Categories", value=len(st.session_state.get('categories', [])) == len(categories_list), key='all_cat_checkbox', on_change=toggle_all_items, args=('categories', categories_list, 'all_cat_checkbox'))
+        st.multiselect('Filter by Category', options=categories_list, key='categories')
+        st.sidebar.divider()
+        st.checkbox("Select All Packaging", value=len(st.session_state.get('packaging', [])) == len(packaging_list), key='all_pkg_checkbox', on_change=toggle_all_items, args=('packaging', packaging_list, 'all_pkg_checkbox'))
+        st.multiselect('Filter by Packaging', options=packaging_list, key='packaging')
+    with st.sidebar.expander("Filter by Specifics"):
+        st.multiselect('Filter by Brand', options=brands_list, key='brands')
+        st.multiselect('Filter by Fragrance', options=fragrances_list, key='fragrances')
+
     st.sidebar.divider()
     st.sidebar.header("Share with Customer")
-    if st.sidebar.button("Generate Customer Order Link"):
-        # 1. Get all the current filter settings
+    if st.sidebar.button("Generate Customer Order Link", type="primary"):
         params = {
             "customer": st.session_state.customer if st.session_state.customer != "-- General / No Customer --" else "",
             "country": st.session_state.country if st.session_state.country != "-- General / No Country --" else "",
-            "categories": st.session_state.categories,
-            "packaging": st.session_state.packaging,
-            "brands": st.session_state.brands,
-            "fragrances": st.session_state.fragrances
+            "categories": st.session_state.categories, "packaging": st.session_state.packaging,
+            "brands": st.session_state.brands, "fragrances": st.session_state.fragrances
         }
         
-        # 2. Build the URL
-        # IMPORTANT: Replace with your actual Streamlit app URL
-        base_url = "https://hem-order.streamlit.app/"
+        # IMPORTANT: Replace with your actual Streamlit app URL for this new branch
+        base_url = "https://hem-order.streamlit.app/" 
         query_string = urllib.parse.urlencode(params, doseq=True)
         final_url = base_url + "?" + query_string
         
-        # 3. Display the link for the salesperson
         st.sidebar.success("Link Generated!")
         st.sidebar.markdown("Copy the link below and send it to your customer:")
         st.sidebar.code(final_url)
+    
+    with st.sidebar.expander("Save Current Selection"):
+        st.text_input("Enter selection name", key="selection_name_input")
+        st.button("Save Filters", on_click=save_selection)
 
-    # The rest of the salesperson view (preview table, PDF button, etc.) is unchanged...
-    # ...
+    st.title("Dynamic Product Catalogue Maker 🛍️")
+    try:
+        skus_with_rules = rules_df['SKU Code'].unique()
+        general_skus = products_df[~products_df['SKU Code'].isin(skus_with_rules)]['SKU Code']
+        allowed_exclusive_skus = pd.Series(dtype=str)
+        if st.session_state.customer != "-- General / No Customer --":
+            customer_exclusive_skus = rules_df[(rules_df['RuleType'] == 'Customer') & (rules_df['RuleValue'] == st.session_state.customer)]['SKU Code']
+            allowed_exclusive_skus = pd.concat([allowed_exclusive_skus, customer_exclusive_skus])
+        if st.session_state.country != "-- General / No Country --":
+            country_exclusive_skus = rules_df[(rules_df['RuleType'] == 'Country') & (rules_df['RuleValue'] == st.session_state.country)]['SKU Code']
+            allowed_exclusive_skus = pd.concat([allowed_exclusive_skus, country_exclusive_skus])
+        
+        final_allowed_skus = pd.concat([general_skus, allowed_exclusive_skus]).unique()
+        base_filtered_df = products_df[products_df['SKU Code'].isin(final_allowed_skus)]
+        filtered_df = base_filtered_df[base_filtered_df['Category'].isin(st.session_state.categories) & base_filtered_df['Packaging'].isin(st.session_state.packaging) & base_filtered_df['Brand'].isin(st.session_state.brands) & base_filtered_df['Fragrance'].isin(st.session_state.fragrances)].copy()
+
+        st.header("Salesperson Preview")
+        st.caption("A compact, searchable view of the selected products for verification.")
+        if filtered_df.empty:
+            st.warning("No products match the current filter selection.")
+        else:
+            preview_df = filtered_df.copy()
+            exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
+            exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
+            preview_df = pd.merge(preview_df, exclusivity_info[['SKU Code', 'Exclusivity']], on='SKU Code', how='left')
+            preview_df['Exclusivity'].fillna('General', inplace=True)
+            preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
+            final_columns = ['Category', 'Packaging', 'Product', 'Exclusivity', 'SKU Code']
+            st.dataframe(preview_df[final_columns], use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
 
 # --- VIEW: Customer Order Portal ---
 def render_customer_view(params):
     st.set_page_config(page_title="Hem Order Portal", page_icon="📝", layout="wide")
     
-    products_df, packaging_df, _, _, rules_df = load_data()
+    products_df, _, _, _, rules_df = load_data()
     
-    # 1. Parse all filter criteria from the URL
     customer = params.get("customer", [None])[0]
     country = params.get("country", [None])[0]
     selected_categories = params.get("categories", [])
@@ -113,12 +186,9 @@ def render_customer_view(params):
     selected_brands = params.get("brands", [])
     selected_fragrances = params.get("fragrances", [])
 
-    # Display a nice header
     st.title(f"Product Catalogue for {customer}" if customer else "Product Catalogue")
     st.markdown("---")
     
-    # 2. Apply the exact same filtering logic as the salesperson view
-    # Exclusivity rules
     skus_with_rules = rules_df['SKU Code'].unique()
     general_skus = products_df[~products_df['SKU Code'].isin(skus_with_rules)]['SKU Code']
     allowed_exclusive_skus = pd.Series(dtype=str)
@@ -132,35 +202,20 @@ def render_customer_view(params):
     final_allowed_skus = pd.concat([general_skus, allowed_exclusive_skus]).unique()
     base_filtered_df = products_df[products_df['SKU Code'].isin(final_allowed_skus)]
     
-    # Attribute filters
-    filtered_df = base_filtered_df[
-        base_filtered_df['Category'].isin(selected_categories) &
-        base_filtered_df['Packaging'].isin(selected_packaging) &
-        base_filtered_df['Brand'].isin(selected_brands) &
-        base_filtered_df['Fragrance'].isin(selected_fragrances)
-    ].copy()
+    filtered_df = base_filtered_df[ base_filtered_df['Category'].isin(selected_categories) & base_filtered_df['Packaging'].isin(selected_packaging) & base_filtered_df['Brand'].isin(selected_brands) & base_filtered_df['Fragrance'].isin(selected_fragrances) ].copy()
 
-    # 3. Display the catalogue using our existing HTML generation logic
     if filtered_df.empty:
         st.warning("No products match the specified selection.")
     else:
-        # For this view, we will just show the beautiful HTML catalogue
-        # Note: The input boxes are just for show in this Phase 1.
-        catalogue_html = generate_product_tables_html(filtered_df, packaging_df)
-        st.html(HTML_CSS + catalogue_html)
-
+        # For now, just display the products as a simple table.
+        # We will build the interactive order form here in Phase 2.
+        st.dataframe(filtered_df[['SKU Code', 'ItemName', 'Fragrance', 'Packaging']])
+        
 # --- MAIN LOGIC: The "Router" ---
-# This part decides which view to show.
-
-# Check for URL parameters first
 params = st.query_params.to_dict()
 
-# If there are parameters, it's a customer link. Show the customer view.
-# The customer does not need a password.
 if params:
     render_customer_view(params)
-
-# Otherwise, it's a salesperson. Check for password and show the main tool.
 else:
     if check_password():
         render_salesperson_view()
