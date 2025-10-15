@@ -2,4 +2,3 @@ streamlit
 pandas
 pdfkit
 openpyxl
-pyarrow==14.0.1
