@@ -1,4 +1,4 @@
-# --- FINAL, COMPLETE SCRIPT ---
+# --- FINAL, COMPLETE CATALOGUE MAKER SCRIPT ---
 import streamlit as st
 import pandas as pd
 import pdfkit
@@ -12,64 +12,112 @@ import os
 def check_password():
     """Returns `True` if the user entered the correct password."""
     def password_entered():
-        # Check if the password is correct against the secret
         if st.session_state.get("password") and "PASSWORD" in st.secrets and st.session_state["password"] == st.secrets["PASSWORD"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't keep password in state
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if st.session_state.get("password_correct", False):
         return True
 
-    # Show the password input if not authenticated.
     st.text_input("Enter Password to access the App", type="password", on_change=password_entered, key="password")
     if "password_correct" in st.session_state and not st.session_state["password_correct"]:
         st.error("😕 Password incorrect. Please try again.")
     return False
 
-# --- Main app logic starts only if password is correct ---
+# --- Main App Logic ---
 if check_password():
-    st.set_page_config(page_title="Hem Exports Catalogue Maker", page_icon="📄", layout="wide")
+    st.set_page_config(page_title="Hem Brochure Maker", page_icon="🎨", layout="wide")
 
-    # --- Configuration for our packaged wkhtmltopdf tool ---
-    # Construct the path to the binary within the app's directory on the server
+    # --- Configuration for wkhtmltopdf ---
     path_wkhtmltopdf = os.path.join(os.path.dirname(__file__), 'bin', 'wkhtmltopdf')
-    # Set permissions to make it executable (crucial for Linux servers)
     try:
         os.chmod(path_wkhtmltopdf, 0o755)
     except (OSError, FileNotFoundError):
-        # This can fail on local Windows, which is fine. It's for the cloud deployment.
         pass
     CONFIG = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
     
-    SELECTIONS_DIR = Path("selections")
-    SELECTIONS_DIR.mkdir(exist_ok=True)
-
+    # --- Brochure CSS (Landscape, Grid, Visual Focus) ---
     HTML_CSS = """
     <style>
-        body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 11pt; color: #3d3d3d; }
-        h1 { color: #222; text-align: center; margin: 30px 0; font-weight: 300; letter-spacing: 1px; }
-        .header-table { width: 100%; border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; border-spacing: 0; }
-        .header-logo { text-align: left; width: 40%; }
-        .header-logo img { max-height: 70px; }
-        .header-details { text-align: right; font-size: 10pt; color: #555; line-height: 1.5; vertical-align: middle; }
-        .customer-details { margin-top: 30px; padding: 15px; border: 1px solid #f0f0f0; border-radius: 6px; }
-        .customer-name-display { font-weight: bold; }
-        .category-header { font-size: 24pt; font-weight: 300; color: #111; border-bottom: 1px solid #ddd; padding-bottom: 12px; margin-top: 45px; margin-bottom: 30px; page-break-after: avoid; letter-spacing: 0.5px; }
-        .packaging-header { padding-bottom: 10px; }
-        .packaging-title { font-weight: 600; font-size: 14pt; color: #222; }
-        .packaging-specs { font-size: 9pt; color: #666; margin-top: 5px; }
-        .main-product-table { width: 100%; border-collapse: separate; border-spacing: 0 20px; table-layout: fixed; }
-        .main-product-table > tbody > tr > td { width: 50%; padding: 0 15px; vertical-align: top; }
-        .product-cell-table { width: 100%; height: 100px; }
-        .image-cell { width: 100px; height: 100px; text-align: center; vertical-align: middle; }
-        .product-image { max-width: 100px; max-height: 100px; object-fit: contain; }
-        .text-cell { padding-left: 15px; vertical-align: middle; }
-        .item-name { font-weight: 600; font-size: 12pt; color: #000; }
-        .item-fragrance { font-size: 10pt; color: #555; }
-        .input-cell { width: 90px; vertical-align: middle; text-align: center; color: #3d3d3d; font-size: 9pt; line-height: 1.2; }
-        .input-cell input { width: 80px; text-align: center; border: 1px solid #000000; border-radius: 4px; padding: 8px; font-size: 11pt; background-color: #ffffff; color: #000000; margin-top: 5px; }
+        @page { size: A4 landscape; margin: 0; }
+        body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; }
+        
+        /* Header & Footer */
+        .page-header { 
+            padding: 20px 40px; 
+            border-bottom: 4px solid #d32f2f; /* Brand Color Accent */
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            background-color: #fff;
+        }
+        .header-logo img { height: 60px; }
+        .header-title { font-size: 24pt; font-weight: 300; text-transform: uppercase; letter-spacing: 2px; color: #222; }
+        
+        .page-footer {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            padding: 10px 40px; font-size: 8pt; color: #888; text-align: right;
+            border-top: 1px solid #eee; background: #fff;
+        }
+
+        /* Cover Page */
+        .cover-page {
+            height: 100vh; width: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; page-break-after: always;
+            background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+        }
+        .cover-title { font-size: 48pt; font-weight: bold; margin-bottom: 20px; color: #d32f2f; }
+        .cover-subtitle { font-size: 18pt; color: #555; margin-bottom: 50px; }
+        .cover-meta { font-size: 12pt; color: #777; }
+
+        /* Product Grid Layout */
+        .catalogue-container { padding: 40px; }
+        .category-separator { 
+            width: 100%; margin-top: 20px; margin-bottom: 20px; 
+            border-bottom: 1px solid #ccc; 
+            font-size: 18pt; font-weight: 300; color: #d32f2f; 
+            page-break-after: avoid;
+        }
+        
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* 3 Columns */
+            gap: 30px;
+            row-gap: 40px;
+        }
+
+        /* Individual Product Card */
+        .product-card {
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            overflow: hidden;
+            page-break-inside: avoid; /* Don't chop cards in half */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .card-image-box {
+            height: 200px; /* Fixed height for image area */
+            width: 100%;
+            display: flex; justify-content: center; align-items: center;
+            background-color: #fff;
+            padding: 10px;
+            box-sizing: border-box;
+            border-bottom: 1px solid #f9f9f9;
+        }
+        .card-image { max-height: 100%; max-width: 100%; object-fit: contain; }
+        
+        .card-details { padding: 15px; text-align: center; }
+        .card-title { font-size: 12pt; font-weight: 700; margin-bottom: 5px; color: #222; min-height: 30px;}
+        .card-fragrance { font-size: 10pt; color: #d32f2f; font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .specs-table { width: 100%; font-size: 8pt; color: #666; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+        .specs-table td { padding: 2px; }
+        .spec-label { text-align: left; font-weight: 600; }
+        .spec-val { text-align: right; }
     </style>
     """
 
@@ -80,177 +128,246 @@ if check_password():
             with open(path, "rb") as image_file: return base64.b64encode(image_file.read()).decode()
         except Exception: return ""
 
-    def toggle_all_items(key_for_multiselect, options_list, key_for_checkbox):
-        if st.session_state[key_for_checkbox]: st.session_state[key_for_multiselect] = options_list
-        else: st.session_state[key_for_multiselect] = []
-
-    def generate_product_tables_html(filtered_df, packaging_df):
-        html = ""
-        for category, category_group in filtered_df.groupby('Category'):
-            html += f"<h2 class='category-header'>{category}</h2>"
-            for packaging, packaging_group in category_group.groupby('Packaging'):
-                pkg_details = packaging_df[packaging_df['PackagingName'] == packaging].iloc[0]
-                spec_string = (f"Pcs/Ctn <strong>{pkg_details.get('Pcs Per master Ctn', 'N/A')}</strong> | Gross Wt <strong>{pkg_details.get('GrossWtKg', 'N/A')} Kg</strong> | CBM <strong>{pkg_details.get('CBM', 0):.3f}</strong>")
-                html += f"""<div class="packaging-header"><div class="packaging-title">{packaging}</div><div class="packaging-specs">{spec_string}</div></div>"""
-                html += '<table class="main-product-table"><tbody>'
-                for i in range(0, len(packaging_group), 2):
-                    html += '<tr>'
-                    row1 = packaging_group.iloc[i]
-                    img_b64_1 = row1['ImageB64']
-                    img_tag_1 = f'<img class="product-image" src="data:image/png;base64,{img_b64_1}">' if img_b64_1 else ''
-                    html += f"""<td><table class="product-cell-table"><tr><td class="image-cell" rowspan="2">{img_tag_1}</td><td class="text-cell"><div class="item-name">{row1.get('ItemName', '')}</div><div class="item-fragrance">{row1.get('Fragrance', '')}</div></td><td class="input-cell" rowspan="2">Order Qty (Cartons)<br><input type="text" name="qty_{row1.get('SKU Code','')}" /></td></tr><tr><td class="text-cell"></td></tr></table></td>"""
-                    if (i + 1) < len(packaging_group):
-                        row2 = packaging_group.iloc[i + 1]
-                        img_b64_2 = row2['ImageB64']
-                        img_tag_2 = f'<img class="product-image" src="data:image/png;base64,{img_b64_2}">' if img_b64_2 else ''
-                        html += f"""<td><table class="product-cell-table"><tr><td class="image-cell" rowspan="2">{img_tag_2}</td><td class="text-cell"><div class="item-name">{row2.get('ItemName', '')}</div><div class="item-fragrance">{row2.get('Fragrance', '')}</div></td><td class="input-cell" rowspan="2">Order Qty (Cartons)<br><input type="text" name="qty_{row2.get('SKU Code','')}" /></td></tr><tr><td class="text-cell"></td></tr></table></td>"""
-                    else: html += '<td></td>'
-                    html += '</tr>'
-                html += '</tbody></table>'
-        return html
-
-    def generate_full_pdf_html(product_tables_html, customer_name, logo_b64, current_date):
-        html = f"""<html><head><meta charset="utf-8">{HTML_CSS}</head><body>"""
-        html += f"""<table class="header-table"><tr><td class="header-logo"><img src="data:image/png;base64,{logo_b64}"></td><td class="header-details"><strong>Hem Corporation Private Limited</strong><br>G-5, Riddhi Siddhi Apts, Mithagar 'X' Road, Mulund (E)<br>Mumbai - 400081, India<br>exports@hemincense.com</td></tr></table><h1>Product Order Form</h1><div class="customer-details"><strong>Order For:</strong> {'<span class="customer-name-display">' + customer_name + '</span>' if customer_name else '_________________'} <strong style="margin-left: 40px;">Date:</strong> {current_date}</div>"""
-        html += product_tables_html
-        html += "</body></html>"
-        return html
-
     @st.cache_data
     def load_data():
         products_df = pd.read_excel('products_master.xlsx', dtype={'SKU Code': str})
         packaging_df = pd.read_excel('packaging_master.xlsx')
         customers_df = pd.read_excel('customers_master.xlsx')
-        countries_df = pd.read_excel('countries_master.xlsx')
-        rules_df = pd.read_excel('exclusivity_rules.xlsx', dtype={'SKU Code': str})
+        # Pre-calculate paths
         products_df['ImagePath'] = products_df['ImageFileName'].apply(lambda x: Path('images') / str(x) if pd.notna(x) else None)
         products_df['ImageB64'] = products_df['ImagePath'].apply(get_image_as_base64_str)
-        return products_df, packaging_df, customers_df, countries_df, rules_df
+        return products_df, packaging_df, customers_df
 
-    def get_selections():
-        return ["---"] + [f.stem for f in SELECTIONS_DIR.glob("*.json")]
+    # --- Helper: Initialize Session State for "Shopping Cart" ---
+    if 'catalogue_cart' not in st.session_state:
+        st.session_state.catalogue_cart = [] # List of dictionaries (Product Rows)
 
-    def load_selection():
-        selection_name = st.session_state.selected_preset
-        if selection_name and selection_name != "---":
-            filepath = SELECTIONS_DIR / f"{selection_name}.json"
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-                for key, value in data.items():
-                    st.session_state[key] = value
-            st.toast(f"Loaded selection: {selection_name}", icon="✅")
-
-    def save_selection():
-        selection_name = st.session_state.get("selection_name_input", "").strip()
-        if not selection_name:
-            st.sidebar.warning("Please enter a name for the selection.")
-            return
-        filepath = SELECTIONS_DIR / f"{selection_name}.json"
-        state_to_save = { 'customer': st.session_state.get('customer'), 'country': st.session_state.get('country'),
-                          'categories': st.session_state.get('categories'), 'packaging': st.session_state.get('packaging'),
-                          'brands': st.session_state.get('brands'), 'fragrances': st.session_state.get('fragrances') }
-        with open(filepath, 'w') as f: json.dump(state_to_save, f, indent=4)
-        st.sidebar.success(f"Saved selection: {selection_name}")
-        st.session_state["selection_name_input"] = ""
-
-    st.title("Dynamic Product Catalogue Maker 🛍️")
-    try:
-        products_df, packaging_df, customers_df, countries_df, rules_df = load_data()
-        
-        categories_list = sorted(products_df['Category'].dropna().unique())
-        packaging_list = sorted(products_df['Packaging'].dropna().unique())
-        brands_list = sorted(products_df['Brand'].dropna().unique())
-        fragrances_list = sorted(products_df['Fragrance'].dropna().unique())
-        customer_list = ["-- General / No Customer --"] + sorted(customers_df['CustomerName'].dropna().unique())
-        country_list = ["-- General / No Country --"] + sorted(countries_df['CountryName'].dropna().unique())
-
-        if 'filters_initialized' not in st.session_state:
-            st.session_state.customer = customer_list[0]
-            st.session_state.country = country_list[0]
-            st.session_state.categories = categories_list
-            st.session_state.packaging = packaging_list
-            st.session_state.brands = brands_list
-            st.session_state.fragrances = fragrances_list
-            st.session_state.filters_initialized = True
-
-        st.sidebar.title("Configuration")
-        st.sidebar.header("Load Selection")
-        saved_selections = get_selections()
-        st.selectbox("Choose a saved filter set", options=saved_selections, key="selected_preset", on_change=load_selection)
-        st.sidebar.divider()
-        st.sidebar.header("Catalogue Selection")
-        st.sidebar.selectbox("1. Select Customer", customer_list, key='customer')
-        st.sidebar.selectbox("2. Select Country", country_list, key='country')
-        st.sidebar.header("Product Filters")
-        with st.sidebar.expander("Filter by Product Type", expanded=True):
-            all_categories_selected = len(st.session_state.get('categories', [])) == len(categories_list)
-            st.checkbox("Select All Categories", value=all_categories_selected, key='all_cat_checkbox', on_change=toggle_all_items, args=('categories', categories_list, 'all_cat_checkbox'))
-            st.multiselect('Filter by Category', options=categories_list, key='categories')
-            st.sidebar.divider()
-            all_packaging_selected = len(st.session_state.get('packaging', [])) == len(packaging_list)
-            st.checkbox("Select All Packaging", value=all_packaging_selected, key='all_pkg_checkbox', on_change=toggle_all_items, args=('packaging', packaging_list, 'all_pkg_checkbox'))
-            st.multiselect('Filter by Packaging', options=packaging_list, key='packaging')
-        with st.sidebar.expander("Filter by Specifics"):
-            st.multiselect('Filter by Brand', options=brands_list, key='brands')
-            st.multiselect('Filter by Fragrance', options=fragrances_list, key='fragrances')
-
-        skus_with_rules = rules_df['SKU Code'].unique()
-        general_skus = products_df[~products_df['SKU Code'].isin(skus_with_rules)]['SKU Code']
-        allowed_exclusive_skus = pd.Series(dtype=str)
-        if st.session_state.customer != "-- General / No Customer --":
-            customer_exclusive_skus = rules_df[(rules_df['RuleType'] == 'Customer') & (rules_df['RuleValue'] == st.session_state.customer)]['SKU Code']
-            allowed_exclusive_skus = pd.concat([allowed_exclusive_skus, customer_exclusive_skus])
-        if st.session_state.country != "-- General / No Country --":
-            country_exclusive_skus = rules_df[(rules_df['RuleType'] == 'Country') & (rules_df['RuleValue'] == st.session_state.country)]['SKU Code']
-            allowed_exclusive_skus = pd.concat([allowed_exclusive_skus, country_exclusive_skus])
-        
-        final_allowed_skus = pd.concat([general_skus, allowed_exclusive_skus]).unique()
-        base_filtered_df = products_df[products_df['SKU Code'].isin(final_allowed_skus)]
-        filtered_df = base_filtered_df[base_filtered_df['Category'].isin(st.session_state.categories) & base_filtered_df['Packaging'].isin(st.session_state.packaging) & base_filtered_df['Brand'].isin(st.session_state.brands) & base_filtered_df['Fragrance'].isin(st.session_state.fragrances)].copy()
-
-        st.header("Salesperson Preview")
-        st.caption("A compact, searchable view of the selected products for verification.")
-        if filtered_df.empty:
-            st.warning("No products match the current filter selection.")
+    def add_to_cart(selected_rows_df):
+        """Adds items to the catalogue list, avoiding duplicates."""
+        current_skus = {item['SKU Code'] for item in st.session_state.catalogue_cart}
+        count = 0
+        for index, row in selected_rows_df.iterrows():
+            if row['SKU Code'] not in current_skus:
+                st.session_state.catalogue_cart.append(row.to_dict())
+                count += 1
+        if count > 0:
+            st.toast(f"Added {count} products to catalogue!", icon="🛒")
         else:
-            preview_df = filtered_df.copy()
-            exclusivity_info = rules_df[['SKU Code', 'RuleType', 'RuleValue']].copy()
-            exclusivity_info['Exclusivity'] = exclusivity_info['RuleType'] + ": " + exclusivity_info['RuleValue']
-            preview_df = pd.merge(preview_df, exclusivity_info[['SKU Code', 'Exclusivity']], on='SKU Code', how='left')
-            preview_df['Exclusivity'].fillna('General', inplace=True)
-            preview_df['Product'] = preview_df['ItemName'] + " - " + preview_df['Fragrance']
-            final_columns = ['Category', 'Packaging', 'Product', 'Exclusivity', 'SKU Code']
-            st.dataframe(preview_df[final_columns], use_container_width=True, hide_index=True)
+            st.toast("Selected items are already in the catalogue.", icon="ℹ️")
 
-        st.header("Generate Your Catalogue")
-        customer_name_input = st.text_input("Enter Customer Name for PDF", value=st.session_state.customer if st.session_state.customer != '-- General / No Customer --' else '')
+    def clear_cart():
+        st.session_state.catalogue_cart = []
 
-        if st.button("Generate PDF Order Form", type="primary"):
-            if filtered_df.empty:
-                st.error("Cannot generate PDF. No products are selected.")
-            else:
-                with st.spinner('Building your definitive catalogue... Please wait.'):
-                    current_date = datetime.now().strftime("%d-%b-%Y")
-                    logo_b64 = get_image_as_base64_str(Path('assets') / 'logo.png')
-                    product_tables_html = generate_product_tables_html(filtered_df, packaging_df)
-                    final_html_string = generate_full_pdf_html(product_tables_html, customer_name_input, logo_b64, current_date)
+    def generate_brochure_html(cart_items, packaging_df, customer_name, logo_b64):
+        # Convert cart to DF for grouping
+        df = pd.DataFrame(cart_items)
+        
+        current_date = datetime.now().strftime("%B %Y")
+        
+        html = f"""<html><head><meta charset="utf-8">{HTML_CSS}</head><body>"""
+        
+        # 1. Cover Page
+        html += f"""
+        <div class="cover-page">
+            <div style="margin-bottom:30px;"><img src="data:image/png;base64,{logo_b64}" style="max-height:120px;"></div>
+            <div class="cover-title">Product Collection</div>
+            <div class="cover-subtitle">Curated Exclusively for {customer_name}</div>
+            <div class="cover-meta">{current_date}</div>
+        </div>
+        """
+
+        # 2. Content Pages
+        # Header for content pages
+        html += f"""
+        <div class="page-header">
+            <div class="header-logo"><img src="data:image/png;base64,{logo_b64}"></div>
+            <div class="header-title">Export Catalogue</div>
+        </div>
+        <div class="catalogue-container">
+        """
+
+        # Group by Category
+        for category, cat_group in df.groupby('Category'):
+            html += f'<div class="category-separator">{category}</div>'
+            html += '<div class="grid-container">'
+            
+            for index, row in cat_group.iterrows():
+                # Get packaging specs
+                pkg_name = row.get('Packaging')
+                pkg_info = packaging_df[packaging_df['PackagingName'] == pkg_name]
+                
+                pcs_ctn = "N/A"
+                cbm = "N/A"
+                
+                if not pkg_info.empty:
+                    pcs_ctn = pkg_info.iloc[0].get('Pcs Per master Ctn', 'N/A')
+                    cbm = f"{pkg_info.iloc[0].get('CBM', 0):.3f}"
+
+                img_b64 = row.get('ImageB64', '')
+                img_tag = f'<img class="card-image" src="data:image/png;base64,{img_b64}">' if img_b64 else '<span style="color:#ccc;">No Image</span>'
+                
+                html += f"""
+                <div class="product-card">
+                    <div class="card-image-box">{img_tag}</div>
+                    <div class="card-details">
+                        <div class="card-title">{row.get('ItemName', 'Unknown Item')}</div>
+                        <div class="card-fragrance">{row.get('Fragrance', '')}</div>
+                        <div style="font-size:9pt; color:#555;">{pkg_name}</div>
+                        <table class="specs-table">
+                            <tr><td class="spec-label">Pcs/Master:</td><td class="spec-val">{pcs_ctn}</td></tr>
+                            <tr><td class="spec-label">CBM:</td><td class="spec-val">{cbm}</td></tr>
+                            <tr><td class="spec-label">SKU:</td><td class="spec-val">{row.get('SKU Code')}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                """
+            
+            html += '</div>' # End grid container
+            html += '<div style="margin-bottom: 40px;"></div>' # Spacer between categories
+
+        html += "</div>" # End catalogue container
+        html += "</body></html>"
+        return html
+
+    # --- Load Master Data ---
+    products_df, packaging_df, customers_df = load_data()
+
+    # --- UI Layout ---
+    st.title("✨ Custom Brochure Designer")
+    
+    # We use tabs for the workflow: Build -> Review -> Publish
+    tab_builder, tab_review, tab_publish = st.tabs(["1. Select Products", "2. Review & Organize", "3. Generate PDF"])
+
+    # --- TAB 1: BUILDER (Search & Add) ---
+    with tab_builder:
+        col_filters, col_results = st.columns([1, 3])
+        
+        with col_filters:
+            st.subheader("🔍 Find Products")
+            search_term = st.text_input("Search Item Name / SKU")
+            
+            # Category Filter
+            all_cats = sorted(products_df['Category'].dropna().unique())
+            sel_cats = st.multiselect("Category", all_cats)
+            
+            # Brand Filter
+            all_brands = sorted(products_df['Brand'].dropna().unique())
+            sel_brands = st.multiselect("Brand", all_brands)
+            
+            # Fragrance Filter
+            all_frags = sorted(products_df['Fragrance'].dropna().unique())
+            sel_frags = st.multiselect("Fragrance", all_frags)
+
+        with col_results:
+            # Apply Filters
+            filtered_df = products_df.copy()
+            if search_term:
+                filtered_df = filtered_df[filtered_df['ItemName'].str.contains(search_term, case=False, na=False) | 
+                                          filtered_df['SKU Code'].str.contains(search_term, case=False, na=False)]
+            if sel_cats:
+                filtered_df = filtered_df[filtered_df['Category'].isin(sel_cats)]
+            if sel_brands:
+                filtered_df = filtered_df[filtered_df['Brand'].isin(sel_brands)]
+            if sel_frags:
+                filtered_df = filtered_df[filtered_df['Fragrance'].isin(sel_frags)]
+            
+            st.subheader(f"Available Products ({len(filtered_df)})")
+            
+            # Use Data Editor with Checkboxes for Selection
+            # We add a temporary 'Select' column
+            filtered_df_display = filtered_df[['SKU Code', 'ItemName', 'Category', 'Fragrance', 'Packaging']].copy()
+            filtered_df_display.insert(0, "Select", False)
+            
+            edited_df = st.data_editor(
+                filtered_df_display, 
+                hide_index=True, 
+                use_container_width=True,
+                column_config={"Select": st.column_config.CheckboxColumn(required=True)}
+            )
+            
+            # Button to Add
+            selected_rows = edited_df[edited_df.Select]
+            col_btn_1, col_btn_2 = st.columns([1, 4])
+            if col_btn_1.button("Add Selected to Brochure", type="primary"):
+                if not selected_rows.empty:
+                    # We need to get the full rows from the original DF based on SKU
+                    full_rows = products_df[products_df['SKU Code'].isin(selected_rows['SKU Code'])]
+                    add_to_cart(full_rows)
+                else:
+                    st.warning("Please check the boxes next to items you want to add.")
+
+    # --- TAB 2: REVIEW (Cart Management) ---
+    with tab_review:
+        st.subheader("🛒 Your Brochure Content")
+        
+        if not st.session_state.catalogue_cart:
+            st.info("Your catalogue is empty. Go to the 'Select Products' tab to add items.")
+        else:
+            cart_df = pd.DataFrame(st.session_state.catalogue_cart)
+            
+            st.markdown(f"**Total Items:** {len(cart_df)}")
+            
+            # Allow user to delete items here
+            cart_display = cart_df[['SKU Code', 'ItemName', 'Category', 'Fragrance', 'Packaging']].copy()
+            cart_display.insert(0, "Remove", False)
+            
+            edited_cart = st.data_editor(
+                cart_display, 
+                hide_index=True, 
+                use_container_width=True,
+                column_config={"Remove": st.column_config.CheckboxColumn(required=True)}
+            )
+            
+            if st.button("Update List (Remove Selected)"):
+                skus_to_remove = edited_cart[edited_cart.Remove]['SKU Code'].tolist()
+                if skus_to_remove:
+                    st.session_state.catalogue_cart = [
+                        item for item in st.session_state.catalogue_cart 
+                        if item['SKU Code'] not in skus_to_remove
+                    ]
+                    st.rerun()
+            
+            if st.button("Clear Entire List", type="secondary"):
+                clear_cart()
+                st.rerun()
+
+    # --- TAB 3: PUBLISH (PDF Gen) ---
+    with tab_publish:
+        st.subheader("🖨️ Generate PDF")
+        
+        col_pub_1, col_pub_2 = st.columns(2)
+        with col_pub_1:
+            customer_name = st.text_input("Customer Name (for Cover Page)", value="Valued Client")
+        
+        if st.button("Create Landscape Brochure", type="primary", disabled=(len(st.session_state.catalogue_cart) == 0)):
+            with st.spinner("Designing brochure..."):
+                logo_b64 = get_image_as_base64_str(Path('assets') / 'logo.png')
+                
+                html_string = generate_brochure_html(st.session_state.catalogue_cart, packaging_df, customer_name, logo_b64)
+                
+                # Landscape Options
+                options = {
+                    'page-size': 'A4',
+                    'orientation': 'Landscape',
+                    'margin-top': '0mm',
+                    'margin-right': '0mm',
+                    'margin-bottom': '0mm',
+                    'margin-left': '0mm',
+                    'encoding': "UTF-8",
+                    'no-outline': None,
+                    'enable-local-file-access': None
+                }
+                
+                try:
+                    pdf_bytes = pdfkit.from_string(html_string, False, options=options, configuration=CONFIG)
                     
-                    options = { 'page-size': 'A4', 'margin-top': '0.75in', 'margin-right': '0.75in',
-                                'margin-bottom': '0.75in', 'margin-left': '0.75in', 'encoding': "UTF-8",
-                                'enable-forms': None }
-                    
-                    pdf_bytes = pdfkit.from_string(final_html_string, False, options=options, configuration=CONFIG)
-
-                    file_name_customer = customer_name_input.replace(' ', '_') if customer_name_input else "General"
-                    file_name = f"Order_Form_{file_name_customer}_{current_date}.pdf"
-                    st.download_button("📥 Download PDF Order Form", data=pdf_bytes, file_name=file_name, mime="application/pdf")
-                    st.success("Your PDF has been generated successfully!")
-
-    except FileNotFoundError as e:
-        st.error(f"Error: A required master file was not found: `{e.filename}`.")
-    except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
-
-    with st.sidebar.expander("Save Current Selection"):
-        st.text_input("Enter selection name", key="selection_name_input")
-        st.button("Save Filters", on_click=save_selection)
+                    file_name_clean = customer_name.replace(' ', '_')
+                    st.success("Brochure Generated Successfully!")
+                    st.download_button(
+                        label="📥 Download PDF Brochure",
+                        data=pdf_bytes,
+                        file_name=f"Hem_Catalogue_{file_name_clean}.pdf",
+                        mime="application/pdf"
+                    )
+                except Exception as e:
+                    st.error(f"PDF Generation Error: {str(e)}")
